@@ -34,8 +34,12 @@ export class CartService {
     );
 
     if (existingItemIndex > -1) {
-      // Update quantity
-      cart.items[existingItemIndex].quantity += quantity;
+      // Update quantity - check if total exceeds stock
+      const newQuantity = cart.items[existingItemIndex].quantity + quantity;
+      if (product.stock < newQuantity) {
+        throw new BadRequestException('Insufficient stock');
+      }
+      cart.items[existingItemIndex].quantity = newQuantity;
     } else {
       // Add new item
       cart.items.push({
@@ -66,6 +70,11 @@ export class CartService {
   async updateCartItem(userId: string, updateCartItemDto: UpdateCartItemDto): Promise<Cart> {
     const { productId, quantity } = updateCartItemDto;
     
+    if (quantity === 0) {
+      // Remove item from cart
+      return this.removeFromCart(userId, productId);
+    }
+
     const cart = await this.cartModel.findOne({ userId }).exec();
     if (!cart) {
       throw new NotFoundException(`Cart for user ${userId} not found`);
@@ -79,17 +88,12 @@ export class CartService {
       throw new NotFoundException(`Product ${productId} not found in cart`);
     }
 
-    if (quantity === 0) {
-      // Remove item from cart
-      cart.items.splice(itemIndex, 1);
-    } else {
-      // Verify stock
-      const product = await this.productsService.findOne(productId);
-      if (product.stock < quantity) {
-        throw new BadRequestException('Insufficient stock');
-      }
-      cart.items[itemIndex].quantity = quantity;
+    // Verify stock
+    const product = await this.productsService.findOne(productId);
+    if (product.stock < quantity) {
+      throw new BadRequestException('Insufficient stock');
     }
+    cart.items[itemIndex].quantity = quantity;
 
     // Recalculate total
     cart.totalAmount = cart.items.reduce(
